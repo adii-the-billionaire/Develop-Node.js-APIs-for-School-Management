@@ -1,5 +1,4 @@
 const mysql = require("mysql2");
-const { getDistance } = require("geolib");
 
 const db = mysql.createConnection({
 	host: "localhost",
@@ -10,39 +9,34 @@ const db = mysql.createConnection({
 
 module.exports = async (req, res) => {
 	if (req.method === "GET") {
-		const { latitude, longitude } = req.query;
-
-		if (latitude === undefined || longitude === undefined) {
+		const { userLatitude, userLongitude } = req.query;
+		if (!userLatitude || !userLongitude) {
 			return res
 				.status(400)
-				.json({ error: "Latitude and longitude are required." });
+				.json({ message: "User latitude and longitude are required" });
 		}
 
-		const query = "SELECT * FROM schools";
-
-		db.query(query, (err, schools) => {
-			if (err) {
-				return res
-					.status(500)
-					.json({ error: "Error fetching schools from the database." });
-			}
-
-			const sortedSchools = schools
-				.map((school) => {
-					const distance = getDistance(
-						{
-							latitude: parseFloat(latitude),
-							longitude: parseFloat(longitude),
-						},
-						{ latitude: school.latitude, longitude: school.longitude },
-					);
-					return { ...school, distance };
-				})
-				.sort((a, b) => a.distance - b.distance);
-
-			res.status(200).json(sortedSchools);
-		});
+		const query = `
+      SELECT *, (
+        6371 * acos(
+          cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + 
+          sin(radians(?)) * sin(radians(latitude))
+        )
+      ) AS distance
+      FROM schools
+      ORDER BY distance ASC;
+    `;
+		db.query(
+			query,
+			[userLatitude, userLongitude, userLatitude],
+			(err, results) => {
+				if (err) {
+					return res.status(500).json({ message: "Error fetching schools" });
+				}
+				res.json(results);
+			},
+		);
 	} else {
-		res.status(405).json({ error: "Method not allowed" });
+		return res.status(405).json({ message: "Method not allowed" });
 	}
 };
